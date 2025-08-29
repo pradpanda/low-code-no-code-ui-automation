@@ -28,6 +28,7 @@ const createTestCaseSchema = Joi.object({
 });
 
 const updateTestCaseSchema = Joi.object({
+  testSuiteId: Joi.alternatives().try(Joi.string(), Joi.number()),
   name: Joi.string().min(1).max(100),
   description: Joi.string().max(500),
   actions: Joi.array().items(testActionSchema),

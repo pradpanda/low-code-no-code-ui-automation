@@ -381,7 +381,13 @@ class TestCase {
           values.push(updateData[key]);
         } else if (key === 'lastExecuted') {
           updateFields.push('last_executed = ?');
-          values.push(updateData[key]);
+          // Convert ISO datetime to MySQL format if it's a string
+          const lastExecuted = updateData[key];
+          if (typeof lastExecuted === 'string' && lastExecuted.includes('T')) {
+            values.push(lastExecuted.slice(0, 19).replace('T', ' '));
+          } else {
+            values.push(lastExecuted);
+          }
         } else if (key === 'executionCount') {
           updateFields.push('execution_count = ?');
           values.push(updateData[key]);
