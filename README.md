@@ -4,10 +4,11 @@ A comprehensive full-stack application for creating and managing UI test automat
 
 ## 🌟 Features
 
-- **Visual Test Builder**: Drag-and-drop interface for creating test workflows
+- **Visual Test Builder**: Click-to-add interface for creating test workflows
 - **Multi-Database Support**: Switch between local MySQL and AWS DynamoDB
 - **Test Suite Management**: Organize tests into logical suites
 - **Action Library**: Pre-built actions for common UI interactions
+- **Cypress Test Runner**: Execute tests with comprehensive reporting
 - **Real-time Execution**: Run tests and view results instantly
 - **Modern UI**: Built with React, TypeScript, and Material-UI
 
@@ -17,7 +18,7 @@ A comprehensive full-stack application for creating and managing UI test automat
 - **React 18** with TypeScript
 - **Material-UI v5** for components
 - **React Query** for data fetching
-- **@dnd-kit** for drag-and-drop functionality
+- **Click-to-add** interface for test building
 - **React Router** for navigation
 
 ### Backend
@@ -26,6 +27,12 @@ A comprehensive full-stack application for creating and managing UI test automat
 - **Environment-based Configuration**
 - **RESTful API** design
 - **Joi** validation
+
+### Test Runner
+- **Cypress** for test execution
+- **Multi-browser support** (Chrome, Firefox, Edge)
+- **Dynamic test loading** from backend API
+- **Comprehensive reporting** with videos and screenshots
 
 ### Database
 - **Local Development**: MySQL
@@ -115,6 +122,13 @@ low-code-no-code-ui-automation/
 │   │   ├── services/       # API services
 │   │   └── App.tsx
 │   └── package.json
+├── test-runner/            # Cypress test execution engine
+│   ├── cypress/
+│   │   ├── e2e/           # Test files
+│   │   └── support/       # Custom commands and utilities
+│   ├── src/               # CLI and API client
+│   ├── cypress.config.js  # Cypress configuration
+│   └── package.json
 ├── database/
 │   └── setup.sql           # MySQL schema and initial data
 └── README.md
@@ -130,10 +144,29 @@ low-code-no-code-ui-automation/
 
 ### Building Test Cases
 1. Go to a Test Suite and click "Create Test Case"
-2. Use the **Action Palette** on the left to see available actions
-3. **Drag actions** from the palette to the **Workflow Canvas**
-4. Configure action parameters in the details panel
+2. Use the **Action Palette** on the right to see available actions
+3. **Click actions** from the palette to add them to your workflow
+4. Configure action parameters in the workflow canvas
 5. Save your test case
+
+### Running Tests
+1. **Install test runner dependencies**:
+   ```bash
+   cd test-runner
+   npm install
+   ```
+
+2. **Run individual test case**:
+   ```bash
+   npm run run-test-case -- --test-case=123 --headed
+   ```
+
+3. **Run entire test suite**:
+   ```bash
+   npm run run-test-suite -- --test-suite=456 --browser=chrome
+   ```
+
+4. **View test results** in the generated reports, videos, and screenshots
 
 ### Available Actions
 - **Navigation**: Go to URL, refresh page, go back/forward

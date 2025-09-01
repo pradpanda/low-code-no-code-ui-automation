@@ -179,7 +179,7 @@ class TestCase {
       const [rows] = await mysql.execute(query, [this.id]);
       this.actions = rows.map(row => ({
         id: row.id,
-        actionType: row.action_type,
+        type: row.action_type,  // Fixed: use 'type' instead of 'actionType'
         name: row.name,
         description: row.description,
         parameters: typeof row.parameters === 'string' ? JSON.parse(row.parameters) : row.parameters,
@@ -195,6 +195,49 @@ class TestCase {
     } catch (error) {
       console.error('Error loading actions for test case:', error);
       this.actions = [];
+    }
+  }
+
+  /**
+   * Update actions for MySQL (in test_actions table)
+   */
+  async _updateActions(actions, mysql) {
+    // Debug: Write to file to prove this method is called
+    const fs = require('fs');
+    fs.writeFileSync('/tmp/actions-debug.txt', `_updateActions called with ${actions.length} actions for test case ${this.id}\n`, { flag: 'a' });
+    
+    try {
+      // First, delete all existing actions for this test case
+      const deleteQuery = `DELETE FROM ${TABLES.TEST_ACTIONS} WHERE test_case_id = ?`;
+      await mysql.execute(deleteQuery, [this.id]);
+
+      // Insert new actions
+      if (actions && actions.length > 0) {
+        const insertQuery = `
+          INSERT INTO ${TABLES.TEST_ACTIONS} 
+          (test_case_id, action_type, name, description, parameters, order_index, enabled) 
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `;
+
+        for (let i = 0; i < actions.length; i++) {
+          const action = actions[i];
+          const values = [
+            this.id,
+            action.type,
+            action.name || '',
+            action.description || '',
+            JSON.stringify(action.parameters || {}),
+            i + 1, // order_index starts from 1
+            action.enabled !== false ? 1 : 0 // Default to enabled
+          ];
+          await mysql.execute(insertQuery, values);
+        }
+      }
+
+      console.log(`Updated ${actions.length} actions for test case ${this.id}`);
+    } catch (error) {
+      console.error('Error updating actions for test case:', error);
+      throw new Error('Failed to update test case actions');
     }
   }
 
@@ -354,6 +397,9 @@ class TestCase {
    * Update test case
    */
   async update(updateData) {
+    console.log(`[TestCase.update] Called with data:`, updateData);
+    console.log(`[TestCase.update] Actions count:`, updateData.actions?.length || 0);
+    
     const db = getDatabase();
     
     if (db.type === 'mysql') {
@@ -369,7 +415,11 @@ class TestCase {
    * Update in MySQL
    */
   async _updateMySQL(updateData, mysql) {
-    const allowedUpdates = ['name', 'description', 'priority', 'status', 'expectedResult', 'tags', 'lastExecuted', 'executionCount'];
+    // Debug: Write updateData to file
+    const fs = require('fs');
+    fs.writeFileSync('/tmp/mysql-debug.txt', `_updateMySQL called with: ${JSON.stringify(updateData, null, 2)}\n`, { flag: 'a' });
+    
+    const allowedUpdates = ['name', 'description', 'actions', 'priority', 'status', 'expectedResult', 'tags', 'lastExecuted', 'executionCount'];
     const updateFields = [];
     const values = [];
 
@@ -394,6 +444,9 @@ class TestCase {
         } else if (key === 'tags') {
           updateFields.push('tags = ?');
           values.push(JSON.stringify(updateData[key]));
+        } else if (key === 'actions') {
+          // Actions are handled separately in test_actions table
+          // Don't add to updateFields - will be processed later
         } else {
           updateFields.push(`${key} = ?`);
           values.push(updateData[key]);
@@ -401,19 +454,29 @@ class TestCase {
       }
     });
 
-    if (updateFields.length === 0) {
+    if (updateFields.length === 0 && !updateData.actions) {
       throw new Error('No valid fields to update');
     }
 
-    // Always update the updatedAt timestamp
-    updateFields.push('updated_at = ?');
-    values.push(new Date().toISOString().slice(0, 19).replace('T', ' '));
-    values.push(this.id);
+    // Only execute the main table update if there are fields to update
+    if (updateFields.length > 0) {
+      // Always update the updatedAt timestamp
+      updateFields.push('updated_at = ?');
+      values.push(new Date().toISOString().slice(0, 19).replace('T', ' '));
+      values.push(this.id);
 
-    const query = `UPDATE ${TABLES.TEST_CASES} SET ${updateFields.join(', ')} WHERE id = ?`;
-
-    try {
+      const query = `UPDATE ${TABLES.TEST_CASES} SET ${updateFields.join(', ')} WHERE id = ?`;
       await mysql.execute(query, values);
+    }
+    
+    try {
+      // Handle actions update if provided
+      if (updateData.actions) {
+        console.log(`Updating actions for test case ${this.id}:`, updateData.actions);
+        await this._updateActions(updateData.actions, mysql);
+      } else {
+        console.log(`No actions provided in updateData for test case ${this.id}`);
+      }
       
       // Fetch updated record
       const updated = await TestCase.findById(this.id);

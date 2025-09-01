@@ -8,13 +8,16 @@ const router = express.Router();
 
 // Validation schemas
 const testActionSchema = Joi.object({
-  id: Joi.string(),
+  id: Joi.alternatives().try(Joi.string(), Joi.number()).optional(),
   type: Joi.string().required(),
+  actionType: Joi.string().optional(), // Frontend sometimes sends this instead of type
   name: Joi.string().max(100),
-  description: Joi.string().max(200),
+  description: Joi.string().max(200).allow(''),
   parameters: Joi.object().required(),
-  enabled: Joi.boolean().default(true)
-});
+  enabled: Joi.alternatives().try(Joi.boolean(), Joi.number()).default(true),
+  orderIndex: Joi.number().optional(),
+  actionDefinition: Joi.object().optional() // Frontend sends this extra data
+}).options({ allowUnknown: true }); // Allow extra fields from frontend
 
 const createTestCaseSchema = Joi.object({
   testSuiteId: Joi.alternatives().try(Joi.string(), Joi.number()).required(),
@@ -30,12 +33,12 @@ const createTestCaseSchema = Joi.object({
 const updateTestCaseSchema = Joi.object({
   testSuiteId: Joi.alternatives().try(Joi.string(), Joi.number()),
   name: Joi.string().min(1).max(100),
-  description: Joi.string().max(500),
+  description: Joi.string().max(500).allow(''), // Allow empty description
   actions: Joi.array().items(testActionSchema),
   tags: Joi.array().items(Joi.string().max(50)),
   priority: Joi.string().valid('low', 'medium', 'high', 'critical'),
   status: Joi.string().valid('active', 'inactive', 'archived'),
-  expectedResult: Joi.string().max(1000)
+  expectedResult: Joi.string().max(1000).allow('') // Also allow empty expectedResult
 }).min(1);
 
 /**
@@ -103,6 +106,24 @@ router.get('/:id', async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+/**
+ * POST /api/test-cases/debug
+ * Debug endpoint to test actions data
+ */
+router.post('/debug', async (req, res) => {
+  console.log('=== DEBUG ENDPOINT ===');
+  console.log('Request body:', JSON.stringify(req.body, null, 2));
+  console.log('Actions count:', req.body.actions?.length || 0);
+  
+  res.json({
+    success: true,
+    received: {
+      actionsCount: req.body.actions?.length || 0,
+      actions: req.body.actions || []
+    }
+  });
 });
 
 /**
@@ -182,6 +203,29 @@ router.put('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
 
+    // Normalize action data from frontend
+    if (req.body.actions) {
+      req.body.actions = req.body.actions.map(action => {
+        const normalizedAction = { ...action };
+        
+        // Map actionType to type if needed
+        if (action.actionType && !action.type) {
+          normalizedAction.type = action.actionType;
+        }
+        
+        // Ensure enabled is boolean
+        if (typeof normalizedAction.enabled === 'number') {
+          normalizedAction.enabled = normalizedAction.enabled === 1;
+        }
+        
+        // Remove extra frontend fields that we don't need in the database
+        delete normalizedAction.actionDefinition;
+        delete normalizedAction.orderIndex;
+        
+        return normalizedAction;
+      });
+    }
+
     // Validate request body
     const { error, value } = updateTestCaseSchema.validate(req.body);
     if (error) {
@@ -193,6 +237,13 @@ router.put('/:id', async (req, res, next) => {
           status: 400
         }
       });
+    }
+
+    console.log(`[PUT /api/test-cases/${id}] Raw request body:`, JSON.stringify(req.body, null, 2));
+    console.log(`[PUT /api/test-cases/${id}] Validated data:`, value);
+    console.log(`[PUT /api/test-cases/${id}] Actions in request:`, value.actions?.length || 0, 'actions');
+    if (value.actions && value.actions.length > 0) {
+      console.log(`[PUT /api/test-cases/${id}] First action:`, JSON.stringify(value.actions[0], null, 2));
     }
 
     // Find test case
