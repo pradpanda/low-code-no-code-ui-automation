@@ -24,6 +24,12 @@ A comprehensive low-code/no-code UI automation testing platform built with React
 
 ## 📸 Screenshots
 
+![Alt text](screenshots/1.PNG)
+
+![Alt text](screenshots/2.PNG)
+
+![Alt text](screenshots/Capture.PNG)
+
 ### Dashboard Overview
 *Main dashboard showing test suites, test cases, and execution statistics*
 - 12 Test Suites with organized categorization
