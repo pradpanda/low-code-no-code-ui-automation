@@ -593,6 +593,17 @@ class TestCase {
       executionCount: this.executionCount + 1
     });
   }
+
+  /**
+   * Static method to update a test case by ID
+   */
+  static async update(id, updateData) {
+    const testCase = await TestCase.findById(id);
+    if (!testCase) {
+      throw new Error(`Test case with ID ${id} not found`);
+    }
+    return testCase.update(updateData);
+  }
 }
 
 module.exports = TestCase;
