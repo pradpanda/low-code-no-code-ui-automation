@@ -3,8 +3,38 @@ const Joi = require('joi');
 const TestCase = require('../models/TestCase');
 const TestSuite = require('../models/TestSuite');
 const { validateTestAction } = require('../models/TestAction');
+const { getDatabase } = require('../config/database');
 
 const router = express.Router();
+
+// Function to store execution results
+async function storeExecutionResult(testCaseId, executionData) {
+  try {
+    const db = getDatabase();
+    const mysql = db.mysql;
+    const query = `
+      INSERT INTO test_execution_history 
+      (test_case_id, status, exit_code, stdout, stderr, executed_at, duration, browser, headed)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    
+    await mysql.query(query, [
+      testCaseId,
+      executionData.status,
+      executionData.exitCode,
+      executionData.stdout,
+      executionData.stderr,
+      executionData.executedAt,
+      executionData.duration,
+      executionData.browser,
+      executionData.headed ? 1 : 0
+    ]);
+    
+    console.log(`[Execute] Stored execution result for test case ${testCaseId}`);
+  } catch (error) {
+    console.error('[Execute] Failed to store execution result:', error);
+  }
+}
 
 // Validation schemas
 const testActionSchema = Joi.object({
@@ -632,6 +662,201 @@ router.post('/:id/duplicate', async (req, res, next) => {
       message: 'Test case duplicated successfully'
     });
   } catch (error) {
+    next(error);
+  }
+});
+
+// Execute test case with Cypress test runner
+router.post('/:id/execute-cypress', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { headed = false, browser = 'chrome' } = req.body;
+
+    console.log(`[Execute] Starting Cypress execution for test case ${id}`);
+    console.log(`[Execute] Options: headed=${headed}, browser=${browser}`);
+
+    // Import required modules
+    const { spawn } = require('child_process');
+    const path = require('path');
+
+    // Path to the test runner
+    const testRunnerPath = path.join(__dirname, '../../test-runner');
+    const cliPath = path.join(testRunnerPath, 'src/cli.js');
+
+    // Build command arguments
+    const args = [
+      cliPath,
+      `--test-case=${id}`,
+      `--browser=${browser}`,
+      `--backend-url=${process.env.BACKEND_URL || 'http://localhost:5000'}`,
+      `--base-url=${process.env.FRONTEND_URL || 'http://localhost:3000'}`
+    ];
+
+    if (headed) {
+      args.push('--headed');
+    }
+
+    console.log(`[Execute] Running command: node ${args.join(' ')}`);
+
+    // Execute the test runner
+    const cypressProcess = spawn('node', args, {
+      cwd: testRunnerPath,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    cypressProcess.stdout.on('data', (data) => {
+      stdout += data.toString();
+      console.log(`[Execute] STDOUT: ${data}`);
+    });
+
+    cypressProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+      console.error(`[Execute] STDERR: ${data}`);
+    });
+
+    cypressProcess.on('close', async (code) => {
+      console.log(`[Execute] Process exited with code ${code}`);
+      
+      try {
+        // Update test case execution status using static method
+        const TestCase = require('../models/TestCase');
+        await TestCase.update(id, {
+          last_executed: new Date().toISOString().slice(0, 19).replace('T', ' '),
+          execution_count: 1, // You might want to increment this
+          status: code === 0 ? 'passed' : 'failed'
+        });
+        
+        // Store execution result in database
+        await storeExecutionResult(id, {
+          status: code === 0 ? 'passed' : 'failed',
+          exitCode: code,
+          stdout: stdout,
+          stderr: stderr,
+          executedAt: new Date().toISOString().slice(0, 19).replace('T', ' '),
+          duration: null, // You could calculate this
+          browser: browser,
+          headed: headed
+        });
+      } catch (updateError) {
+        console.error('[Execute] Failed to update test case:', updateError);
+      }
+    });
+
+    // Don't wait for the process to complete, return immediately
+    res.status(200).json({
+      success: true,
+      message: 'Test execution started',
+      data: {
+        testCaseId: id,
+        status: 'running',
+        options: { headed, browser }
+      }
+    });
+
+  } catch (error) {
+    console.error('[Execute] Error starting test execution:', error);
+    next(error);
+  }
+});
+
+// Get execution history for a test case
+router.get('/:id/execution-history', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { limit = 50, offset = 0 } = req.query;
+
+    const db = getDatabase();
+    const mysql = db.mysql;
+    
+    // Use query instead of execute for better compatibility
+    const query = `
+      SELECT 
+        id,
+        status,
+        exit_code,
+        stdout,
+        stderr,
+        executed_at,
+        duration,
+        browser,
+        headed,
+        created_at
+      FROM test_execution_history 
+      WHERE test_case_id = ?
+      ORDER BY executed_at DESC 
+      LIMIT ?
+    `;
+
+    const [rows] = await mysql.query(query, [parseInt(id), parseInt(limit)]);
+
+    // Get total count
+    const countQuery = `SELECT COUNT(*) as total FROM test_execution_history WHERE test_case_id = ?`;
+    const [countResult] = await mysql.query(countQuery, [parseInt(id)]);
+    const total = countResult[0].total;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        executions: rows,
+        pagination: {
+          total,
+          limit: parseInt(limit),
+          offset: parseInt(offset),
+          hasMore: (parseInt(offset) + parseInt(limit)) < total
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('[ExecutionHistory] Error fetching execution history:', error);
+    next(error);
+  }
+});
+
+// Get latest execution result for a test case
+router.get('/:id/latest-execution', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const db = getDatabase();
+    const mysql = db.mysql;
+    const query = `
+      SELECT 
+        id,
+        status,
+        exit_code,
+        stdout,
+        stderr,
+        executed_at,
+        duration,
+        browser,
+        headed,
+        created_at
+      FROM test_execution_history 
+      WHERE test_case_id = ? 
+      ORDER BY executed_at DESC 
+      LIMIT 1
+    `;
+
+    const [rows] = await mysql.query(query, [parseInt(id)]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No execution history found for this test case'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: rows[0]
+    });
+
+  } catch (error) {
+    console.error('[ExecutionHistory] Error fetching latest execution:', error);
     next(error);
   }
 });
