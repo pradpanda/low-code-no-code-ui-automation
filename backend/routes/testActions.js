@@ -8,7 +8,7 @@ const {
   createTestAction 
 } = require('../models/TestAction');
 const TestActionModel = require('../models/TestActionModel');
-const { DB_TYPE } = require('../config/database');
+const { getDatabase } = require('../config/database');
 
 const router = express.Router();
 
@@ -68,7 +68,8 @@ router.get('/', async (req, res, next) => {
  */
 router.get('/definitions', async (req, res, next) => {
   try {
-    if (DB_TYPE !== 'mysql') {
+    const db = getDatabase();
+    if (db.type !== 'mysql') {
       // For non-MySQL, return static definitions
       const actions = getAllTestActions();
       return res.json({
@@ -357,6 +358,95 @@ router.get('/stats/overview', async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+});
+
+/**
+ * PUT /api/test-actions/:id
+ * Update an existing test action instance
+ */
+router.put('/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const actionData = req.body;
+
+    console.log(`[PUT /api/test-actions/${id}] Updating action:`, actionData);
+
+    // Validate required fields
+    if (!actionData.type) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          message: 'Action type is required',
+          status: 400
+        }
+      });
+    }
+
+    // Create a new TestActionModel instance with the updated data
+    const updatedAction = new TestActionModel({
+      id: parseInt(id),
+      testCaseId: actionData.testCaseId,
+      actionType: actionData.type || actionData.actionType, // Use type or actionType
+      name: actionData.name,
+      description: actionData.description,
+      parameters: actionData.parameters,
+      orderIndex: actionData.orderIndex,
+      enabled: actionData.enabled,
+      updatedAt: new Date().toISOString().slice(0, 19).replace('T', ' ')
+    });
+
+    // Update the action in the database
+    await updatedAction.update();
+
+    res.json({
+      success: true,
+      data: updatedAction,
+      message: 'Test action updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating test action:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        message: 'Failed to update test action',
+        details: error.message,
+        status: 500
+      }
+    });
+  }
+});
+
+/**
+ * DELETE /api/test-actions/:id
+ * Delete a test action instance
+ */
+router.delete('/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    console.log(`[DELETE /api/test-actions/${id}] Deleting action`);
+
+    // Create a TestActionModel instance to delete
+    const actionToDelete = new TestActionModel({ id: parseInt(id) });
+
+    // Delete the action from the database
+    await actionToDelete.delete();
+
+    res.json({
+      success: true,
+      message: 'Test action deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting test action:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        message: 'Failed to delete test action',
+        details: error.message,
+        status: 500
+      }
+    });
   }
 });
 

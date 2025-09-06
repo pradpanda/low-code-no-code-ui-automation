@@ -77,12 +77,13 @@ const updateTestCaseSchema = Joi.object({
  */
 router.get('/', async (req, res, next) => {
   try {
-    const { status, priority, testSuiteId } = req.query;
+    const { status, priority, suiteId } = req.query;
     
     let testCases;
     
-    if (testSuiteId) {
-      testCases = await TestCase.findByTestSuiteId(testSuiteId);
+    if (suiteId) {
+      const suiteIdInt = parseInt(suiteId);
+      testCases = await TestCase.findByTestSuiteId(suiteIdInt);
     } else {
       const filters = {};
       if (status) filters.status = status;
@@ -410,12 +411,24 @@ router.post('/:id/actions', async (req, res, next) => {
       });
     }
 
-    // Add action
-    const updatedTestCase = await testCase.addAction(value);
+    // Create and save the action
+    const TestActionModel = require('../models/TestActionModel');
+    const actionData = {
+      testCaseId: id,
+      actionType: value.type || value.actionType,
+      name: value.name,
+      description: value.description,
+      parameters: value.parameters,
+      orderIndex: value.orderIndex || 0,
+      enabled: value.enabled !== undefined ? value.enabled : true
+    };
+    
+    const newAction = new TestActionModel(actionData);
+    const savedAction = await newAction.save();
 
     res.status(201).json({
       success: true,
-      data: updatedTestCase,
+      data: savedAction,
       message: 'Action added successfully'
     });
   } catch (error) {

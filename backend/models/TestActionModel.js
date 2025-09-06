@@ -7,7 +7,7 @@ const { getDatabase, TABLES } = require('../config/database');
  */
 class TestActionModel {
   constructor(data) {
-    this.id = data.id || uuidv4();
+    this.id = data.id || null; // Will be set by database auto-increment
     this.testCaseId = data.test_case_id || data.testCaseId;
     this.actionType = data.action_type || data.actionType;
     this.name = data.name;
@@ -27,18 +27,20 @@ class TestActionModel {
 
     const query = `
       INSERT INTO ${TABLES.TEST_ACTIONS} 
-      (id, test_case_id, action_type, name, description, parameters, order_index, enabled, created_at, updated_at) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (test_case_id, action_type, name, description, parameters, order_index, enabled, created_at, updated_at) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     
     const values = [
-      this.id, this.testCaseId, this.actionType, this.name, this.description,
+      this.testCaseId, this.actionType, this.name, this.description,
       JSON.stringify(this.parameters), this.orderIndex, this.enabled,
-      this.createdAt, new Date().toISOString()
+      new Date().toISOString().slice(0, 19).replace('T', ' '), // Convert to MySQL datetime format
+      new Date().toISOString().slice(0, 19).replace('T', ' ')  // Convert to MySQL datetime format
     ];
 
     try {
-      await db.mysql.execute(query, values);
+      const [result] = await db.mysql.execute(query, values);
+      this.id = result.insertId; // Set the auto-generated ID
       return this;
     } catch (error) {
       console.error('Error saving test action:', error);
@@ -103,6 +105,45 @@ class TestActionModel {
     } catch (error) {
       console.error('Error getting action definitions:', error);
       throw new Error('Failed to get action definitions');
+    }
+  }
+
+  async update() {
+    const db = getDatabase();
+    if (db.type !== 'mysql') {
+      throw new Error('TestActionModel is only for MySQL');
+    }
+
+    const query = `
+      UPDATE ${TABLES.TEST_ACTIONS} 
+      SET test_case_id = ?, action_type = ?, name = ?, description = ?, 
+          parameters = ?, order_index = ?, enabled = ?, updated_at = ?
+      WHERE id = ?
+    `;
+
+    const values = [
+      this.testCaseId,
+      this.actionType,
+      this.name,
+      this.description,
+      JSON.stringify(this.parameters),
+      this.orderIndex,
+      this.enabled,
+      this.updatedAt,
+      this.id
+    ];
+
+    try {
+      console.log('Updating test action with query:', query);
+      console.log('Values:', values);
+      
+      const [result] = await db.mysql.execute(query, values);
+      console.log('Update result:', result);
+      
+      return this;
+    } catch (error) {
+      console.error('Error updating test action:', error);
+      throw new Error('Failed to update test action');
     }
   }
 
